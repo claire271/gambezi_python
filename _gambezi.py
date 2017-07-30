@@ -11,12 +11,14 @@ class Gambezi:
         # Callbacks
         self.on_ready = None
         self.on_error = None
+        self.on_close = None
 
         # Init
         self.__send_queue = []
         self.__key_request_queue = []
         self.__root_node = Node("", None, self)
         self.__ready = False
+        self.__closed = False
 
         # Async init
         def init():
@@ -25,6 +27,7 @@ class Gambezi:
                 on_message = self.__on_message,
                 on_error = self.__on_error,
                 on_open = self.__on_open,
+                on_close = self.__on_close,
                 subprotocols = ["gambezi-protocol"])
             self.__websocket.run_forever()
         thread = threading.Thread(target = init)
@@ -48,6 +51,13 @@ class Gambezi:
 
         # Get the next queued ID request
         self.__process_key_request_queue()
+
+    def __on_close(self, ws):
+        """Callback when websockets is closed"""
+        # Notify of closed state
+        self.__closed = True
+        if self.on_close is not None:
+            self.on_close(ws)
 
     def __on_message(self, ws, buf):
         """Callback when the client recieves a packet from the server"""
@@ -110,6 +120,14 @@ class Gambezi:
     def is_ready(self):
         """Returns whether this gambezi instance is ready to communicate"""
         return self.__ready
+
+    def is_closed(self):
+        """Returns whether this gambezi instance is closed"""
+        return self.__closed
+
+    def close_connection(self):
+        """Closes this gambezi connection"""
+        self.__websocket.close()
 
     def _request_id(self, parent_key, name, get_children=False):
         """
