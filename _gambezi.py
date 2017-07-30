@@ -1,5 +1,6 @@
 import websocket
 import threading
+import struct
 
 ################################################################################
 class Gambezi:
@@ -214,7 +215,7 @@ class Gambezi:
         # This method is always guarded when called, so no need to check readiness
 
         # Create buffer
-        buf = bytearray(len(key) + lenth + 4)
+        buf = bytearray(len(key) + length + 4)
 
         # Header
         buf[0] = 0x01
@@ -436,7 +437,7 @@ class Node:
             self.__send_queue.append(lambda: self.update_subscription(refresh_skip, set_children))
             return 1
 
-    def retrieve_children():
+    def retrieve_children(self):
         """Retrieves all children of this node from the server"""
         if self.__ready:
             self.__gambezi._request_id(self.__key[:-1], self.__name, True)
@@ -445,32 +446,42 @@ class Node:
             self.__send_queue.append(lambda: self.retrieve_children())
             return 1
 
+    def set_float(self, value):
+        """Sets the value of the node as a 32 bit float"""
+        return self.set_data_raw(struct.pack("!f", value), 0, 4)
 
+    def get_float(self):
+        """
+        Gets the value of this node as a 32 bit float
+        Returns NaN as the default if the format does not match
+        """
+        # Bail if the size is incorrect
+        if len(self.__data) != 4:
+            return float('nan')
+        # Size is correct
+        return struct.unpack("!f", self.__data)[0]
 
+    def set_boolean(self, value):
+        """Sets the value of the node as a boolean"""
+        return self.set_data_raw(b'\x01' if value else b'\x00', 0, 1)
 
+    def get_boolean(self):
+        """
+        Gets the value of this node as a boolean
+        Returns false as the default if the format does not match
+        """
+        # Bail if the size is incorrect
+        if len(self.__data) != 1:
+            return False
+        # Size is correct
+        return self.__data[0] != 0x00
 
+    def set_string(self, value):
+        """Sets the value of the node as a string"""
+        value_bytes = value.encode()
+        return self.set_data_raw(value_bytes, 0, len(value_bytes))
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    def get_string(self):
+        """Gets the value of this node as a string"""
+        return self.__data.decode()
 
