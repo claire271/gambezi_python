@@ -105,8 +105,8 @@ class Gambezi:
                 node._set_data(data)
 
                 # Callback if present
-                if node.on_data_recieved is not None:
-                    node.on_data_recieved(node)
+                if node.on_update is not None:
+                    node.on_update(node)
 
         ########################################
         # Error message from server
@@ -331,7 +331,7 @@ class Node:
         """
         # Callbacks
         self.on_ready = None
-        self.on_data_recieved = None
+        self.on_update = None
 
         # Init
         self.__name = name
