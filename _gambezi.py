@@ -33,7 +33,7 @@ class Gambezi:
                 while True:
                     time.sleep(reconnect_interval)
                     self.open_connection()
-            thread = threeading.Thread(target = reconnect_handler)
+            thread = threading.Thread(target = reconnect_handler)
             thread.start()
 
     def open_connection(self):
