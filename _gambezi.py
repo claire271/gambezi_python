@@ -6,24 +6,55 @@ import struct
 class Gambezi:
     """Represents a connection to a gambezi server"""
 
-    def __init__(self, host_address):
+    def __init__(self, host_address, reconnect=False, reconnect_interval=5):
         """Constructs a gambezi instance with the given target host"""
         # Callbacks
         self.on_ready = None
         self.on_error = None
         self.on_close = None
 
-        # Init
-        self.__send_queue = []
-        self.__key_request_queue = []
-        self.__root_node = Node("", None, self)
-        self.__ready = False
-        self.__closed = False
+        # Variables
+        self.__key_request_queue = None
+        self.__root_node = None
+        self.__refresh_rate = None
+        self.__host_address = None
+        self.__ready = None
+        self.__websocket = None
 
-        # Async init
+        # Init
+        self.__root_node = Node("", None, self)
+        self.__refresh_rate = 100
+        self.__host_address = host_address
+
+        self.open_connection()
+
+        if reconnect:
+            def reconnect_handler():
+                while True:
+                    time.sleep(reconnect_interval)
+                    self.open_connection()
+            thread = threeading.Thread(target = reconnect_handler)
+            thread.start()
+
+    def open_connection(self):
+        """Connects this gambezi instance to the server"""
+        # Bail if the connection is still open
+        if self.__ready:
+            return 1
+
+        # Clear queue
+        self.__key_request_queue = []
+
+        # Set flags
+        self.__ready = False
+
+        # Mark all nodes as not ready to communicate
+        self.__unready_nodes(self.__root_node)
+
+        # Websocket init
         def init():
             self.__websocket = websocket.WebSocketApp(
-                "ws://" + host_address,
+                "ws://" + self.__host_address,
                 on_message = self.__on_message,
                 on_error = self.__on_error,
                 on_open = self.__on_open,
@@ -33,6 +64,9 @@ class Gambezi:
         thread = threading.Thread(target = init)
         thread.start()
 
+        # Success
+        return 0
+
     def __on_error(self, ws, error):
         """Callback when there is a websocket error"""
         if self.on_error is not None:
@@ -40,27 +74,63 @@ class Gambezi:
 
     def __on_open(self, ws):
         """Callback when websockets get initialized"""
-        # Notify of ready state
+        # Set is ready state
         self.__ready = True
-        if self.on_ready is not None:
-            self.on_ready(ws)
 
-        # Send queued packets
-        while len(self.__send_queue) > 0:
-            (self.__send_queue.pop(0))()
+        # Set refresh rate
+        self.set_refresh_rate(self.__refresh_rate)
+
+        # Queue all IDs for all nodes
+        self.__queue_id_requests(self.__root_node, None)
 
         # Get the next queued ID request
         self.__process_key_request_queue()
 
+        # Set root node
+        self.__root_node._set_ready(True)
+
+        # Notify of ready state
+        if self.on_ready is not None:
+            self.on_ready(ws)
+
+    def __queue_id_requests(self, node, parent_string_key):
+        """Recursive method to fetch all IDs for all nodes"""
+        # Normal node
+        if parent_string_key is not None:
+            string_key = parent_string_key.copy()
+            string_key.append(node.get_name())
+            self.__key_request_queue.append(string_key)
+        # Root node
+        else:
+            string_key = []
+
+        # Process children
+        for child in node.get_children():
+            self.__queue_id_requests(child, string_key)
+
+    def __unready_nodes(self, node):
+        """Recursive method to set all child nodes to not ready"""
+        # Set node state
+        node._set_ready(False)
+
+        # Process children
+        for child in node.get_children():
+            self.__unready_nodes(child)
+
     def __on_close(self, ws):
         """Callback when websockets is closed"""
+        self.__ready = False
+
+        # Mark all nodes as not ready to communicate
+        self.__unready_nodes(self.__root_node)
+
         # Notify of closed state
-        self.__closed = True
         if self.on_close is not None:
             self.on_close(ws)
 
     def __on_message(self, ws, buf):
         """Callback when the client recieves a packet from the server"""
+
         ########################################
         # ID response from server
         if buf[0] == 0:
@@ -74,11 +144,17 @@ class Gambezi:
             name_offset = len(binary_key) + 3
             name = buf[name_offset:name_offset+name_length].decode()
 
+            # Bail if the root node got requested
+            if len(binary_key) == 0:
+                # Get the next queued ID request
+                self.__process_key_request_queue()
+                return
+
             # Get the matching node and set the ID
             node = self.__node_traverse(binary_key, True)
             # No error
             if node is not None:
-                node = node.get_child_with_name(name)
+                node = node.get_child_with_name(name, True)
                 node._set_key(binary_key)
 
                 # Get the next queued ID request
@@ -121,15 +197,12 @@ class Gambezi:
         """Returns whether this gambezi instance is ready to communicate"""
         return self.__ready
 
-    def is_closed(self):
-        """Returns whether this gambezi instance is closed"""
-        return self.__closed
-
     def close_connection(self):
         """Closes this gambezi connection"""
-        self.__websocket.close()
+        if self.__websocket is not None:
+            self.__websocket.close()
 
-    def _request_id(self, parent_key, name, get_children=False):
+    def _request_id(self, parent_key, name, get_children=False, get_children_all=False):
         """
         Requests the ID of a node for a given parent key and name
         get_children determines if all descendent keys will be retrieved
@@ -142,7 +215,7 @@ class Gambezi:
 
         # Header
         buf[0] = 0x00;
-        buf[1] = 1 if get_children else 0
+        buf[1] = (2 if get_children_all else 0) | (1 if get_children else 0)
 
         # Parent key
         buf[2] = len(parent_key)
@@ -170,7 +243,7 @@ class Gambezi:
             parent_binary_key = [0] * (len(string_key) - 1)
             node = self.__root_node
             for i in range(len(string_key) - 1):
-                node = node.get_child_with_name(string_key[i])
+                node = node.get_child_with_name(string_key[i], True)
                 ident = node.get_id()
                 # Bail if the parent does not have an ID
                 if ident < 0:
@@ -186,7 +259,7 @@ class Gambezi:
             else:
                 # Request the ID
                 name = string_key[-1]
-                self._request_id(parent_binary_key, name, False)
+                self._request_id(parent_binary_key, name, False, False)
                 break;
 
     def register_key(self, string_key):
@@ -195,11 +268,12 @@ class Gambezi:
         node = self.__root_node
         for i in range(len(string_key)):
             # Go down one level
-            node = node.get_child_with_name(string_key[i])
+            node = node.get_child_with_name(string_key[i], True)
 
             # Queue up ID request if needed
-            if node.get_id() < 0:
-                self.__key_request_queue.append(string_key[:i+1])
+            if self.__ready:
+                if node.get_id() < 0:
+                    self.__key_request_queue.append(string_key[:i+1])
 
         # Get any IDs necessary
         if self.__ready:
@@ -210,6 +284,9 @@ class Gambezi:
 
     def set_refresh_rate(self, refresh_rate):
         """Sets the refresh rate of this client in milliseconds"""
+        # Save for later usage
+        self.__refresh_rate = refresh_rate
+
         if self.__ready:
             # Create buffer
             buf = bytearray(3)
@@ -225,8 +302,11 @@ class Gambezi:
             self.__websocket.send(buf, opcode=websocket.ABNF.OPCODE_BINARY)
             return 0
         else:
-            self.__send_queue.append(lambda: self.set_refresh_rate(refresh_rate))
             return 1
+
+    def get_refresh_rate(self):
+        """Gets the refresh rate of this client in milliseconds"""
+        return self.__refresh_rate
 
     def _set_data_raw(self, key, data, offset, length):
         """Sets the value of the node with a byte buffer"""
@@ -333,17 +413,33 @@ class Node:
         self.on_ready = None
         self.on_update = None
 
-        # Init
-        self.__name = name
-        self.__children = []
-        self.__gambezi = parent_gambezi
-        self.__send_queue = []
-        self.__key = []
-        self.__data = b''
-        if parent_key is not None:
-            self.__key = list(parent_key)
-            self.__key.append(-1)
+        # Variables
+        self.__name = None
+        self.__gambezi = None
+        self.__children = None
+        self.__send_queue = None
+        self.__refresh_skip = None
+        self.__data = None
+        self.__key = None
+        self.__ready = None
+
+        # Flags
         self.__ready = False
+
+        self.__name = name
+        self.__gambezi = parent_gambezi
+
+        self.__children = []
+        self.__send_queue = []
+
+        self.__refresh_skip = 0xFFFF
+        self.__data = b''
+
+        # Init key
+        self.__key = []
+        if parent_key is not None:
+            self.__key = parent_key.copy()
+            self.__key.append(-1)
 
     def get_children(self):
         """Gets a list of all currently visible child nodes"""
@@ -364,9 +460,7 @@ class Node:
         """Sets the binary key of this node"""
         # Notify ready
         self.__key = key
-        self.__ready = True
-        if self.on_ready is not None:
-            self.on_ready()
+        self._set_ready(True)
 
         # Handle queued actions
         while len(self.__send_queue) > 0:
@@ -384,11 +478,23 @@ class Node:
         """Gets the data of this node"""
         return self.__data
 
+    def _set_ready(self, ready):
+        # Save state
+        self.__ready = ready
+
+        # Notify ready
+        if ready:
+            # Set refresh skip
+            self.update_subscription(self.__refresh_skip)
+
+            if self.on_ready is not None:
+                self.on_ready()
+
     def is_ready(self):
         """Returns if this node is ready to communicate"""
         return self.__ready
 
-    def get_child_with_name(self, name):
+    def get_child_with_name(self, name, create=False):
         """
         Gets the child node with the specified name
         Creates a new child name if there is no existing child
@@ -397,6 +503,10 @@ class Node:
         for child in self.__children:
             if child.get_name() == name:
                 return child
+
+        # Bail if requested not to create
+        if not create:
+            return None
 
         # Create child if nonexistent
         child = Node(name, self.__key, self.__gambezi)
@@ -448,20 +558,31 @@ class Node:
         Any other value of refresh skip indicates that this node will be
         retrieved every n client updates
         """
+        # Save for later usage
+        self.__refresh_skip = refresh_skip
+
         if self.__ready:
             self.__gambezi._update_subscription(self.__key, refresh_skip, set_children)
             return 0
         else:
-            self.__send_queue.append(lambda: self.update_subscription(refresh_skip, set_children))
             return 1
 
     def retrieve_children(self):
-        """Retrieves all children of this node from the server"""
+        """Retrieves all immediate children of this node from the server"""
         if self.__ready:
-            self.__gambezi._request_id(self.__key[:-1], self.__name, True)
+            self.__gambezi._request_id(self.__key, "", True, False)
             return 0
         else:
             self.__send_queue.append(lambda: self.retrieve_children())
+            return 1
+
+    def retrieve_children_all(self):
+        """Retrieves all children of this node from the server"""
+        if self.__ready:
+            self.__gambezi._request_id(self.__key, "", True, True)
+            return 0
+        else:
+            self.__send_queue.append(lambda: self.retrieve_children_all())
             return 1
 
     def set_float(self, value):
