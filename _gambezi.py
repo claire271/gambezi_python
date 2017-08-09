@@ -1,6 +1,7 @@
 import websocket
 import threading
 import struct
+import time
 
 ################################################################################
 class Gambezi:
