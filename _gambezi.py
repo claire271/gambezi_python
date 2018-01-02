@@ -767,7 +767,7 @@ class _Node:
     #-------------------------------------------------------------------------------
     def set_double(self, value):
         """Sets the value of the node as a 64 bit float"""
-        return self.set_data_raw(struct.pack("!d", value), 0, 8)
+        return self.set_data(struct.pack("!d", value), 0, 8)
 
     #-------------------------------------------------------------------------------
     def get_double(self):
@@ -784,7 +784,7 @@ class _Node:
     #-------------------------------------------------------------------------------
     def set_float(self, value):
         """Sets the value of the node as a 32 bit float"""
-        return self.set_data_raw(struct.pack("!f", value), 0, 4)
+        return self.set_data(struct.pack("!f", value), 0, 4)
 
     #-------------------------------------------------------------------------------
     def get_float(self):
@@ -801,7 +801,7 @@ class _Node:
     #-------------------------------------------------------------------------------
     def set_boolean(self, value):
         """Sets the value of the node as a boolean"""
-        return self.set_data_raw(b'\x01' if value else b'\x00', 0, 1)
+        return self.set_data(b'\x01' if value else b'\x00', 0, 1)
 
     #-------------------------------------------------------------------------------
     def get_boolean(self):
@@ -819,7 +819,7 @@ class _Node:
     def set_string(self, value):
         """Sets the value of the node as a string"""
         value_bytes = value.encode()
-        return self.set_data_raw(value_bytes, 0, len(value_bytes))
+        return self.set_data(value_bytes, 0, len(value_bytes))
 
     #-------------------------------------------------------------------------------
     def get_string(self):
