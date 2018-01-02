@@ -279,7 +279,7 @@ class Gambezi:
         """Recursive method to fetch all IDs for all nodes"""
         # Normal node
         if parent_string_key is not None:
-            string_key = parent_string_key.copy()
+            string_key = list(parent_string_key)
             string_key.append(node.get_name())
             self.__key_request_queue.append(string_key)
         # Root node
@@ -551,9 +551,9 @@ class _Node:
         self.__binary_key = []
         self.__string_key = []
         if parent_node is not None:
-            self.__binary_key = parent_node.__binary_key.copy()
+            self.__binary_key = list(parent_node.__binary_key)
             self.__binary_key.append(-1)
-            self.__string_key = parent_node.__string_key.copy()
+            self.__string_key = list(parent_node.__string_key)
             self.__string_key.append(name)
 
     #===============================================================================
