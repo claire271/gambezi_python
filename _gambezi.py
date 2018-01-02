@@ -672,7 +672,7 @@ class _Node:
     def request_children(self):
         """Retrieves all immediate children of this node from the server"""
         if self.__ready:
-            self.__gambezi._request_id(self.__key, "", True, False)
+            self.__gambezi._request_id(self.__binary_key, "", True, False)
             return 0
         else:
             self.__send_queue.append(lambda: self.request_children())
@@ -682,7 +682,7 @@ class _Node:
     def request_all_children(self):
         """Retrieves all children of this node from the server"""
         if self.__ready:
-            self.__gambezi._request_id(self.__key, "", True, True)
+            self.__gambezi._request_id(self.__binary_key, "", True, True)
             return 0
         else:
             self.__send_queue.append(lambda: self.request_all_children())
@@ -734,7 +734,7 @@ class _Node:
         get_children determines if all descendent keys will be retrieved
         """
         if self.__ready:
-            self.__gambezi._request_data(self.__key, get_children)
+            self.__gambezi._request_data(self.__binary_key, get_children)
             return 0
         else:
             self.__send_queue.append(lambda: self.request_data(get_children))
@@ -753,7 +753,7 @@ class _Node:
     def set_data(self, data, offset, length):
         """Sets the value of a node with a byte buffer"""
         if self.__ready:
-            self.__gambezi._set_data(self.__key, data, offset, length)
+            self.__gambezi._set_data(self.__binary_key, data, offset, length)
             return 0
         else:
             self.__send_queue.append(lambda: self.set_data(data, offset, length))
